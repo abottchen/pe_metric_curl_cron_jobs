@@ -50,14 +50,23 @@
     }
 -%>
 <% $hosts.each | $host | {
+     $temp_file = "${output_dir}/${host}-temp"
+-%>
+echo '{ "puppetdb": {' > <%= $temp_file %>
+<%
      $metrics_array.each | $metric | {
        $curl_command = "curl -k https://${host}:8081/metrics/v1/mbeans/${metric['url']}"
        $curl_certs   = "--cert /etc/puppetlabs/puppet/ssl/certs/${::clientcert}.pem --key /etc/puppetlabs/puppet/ssl/private_keys/${::clientcert}.pem --cacert /etc/puppetlabs/puppet/ssl/certs/ca.pem"
-       $pipe_to_ruby   = "| /opt/puppetlabs/puppet/bin/ruby -e 'require \"json\"; puts({ \"${metric['name']}\" => JSON.parse(STDIN.read) }.to_json)' | python -m json.tool"
-       $append_to_file = ">> ${output_dir}/${host}-`date +'%m_%d_%y_%R'`.json"
+       $pipe_to_ruby   = "| /opt/puppetlabs/puppet/bin/ruby -e 'require \"json\"; puts(\"${metric['name']}\" => JSON.parse(STDIN.read).to_json)'"
+       $append_to_file = ">> ${temp_file}; echo ',' >> $temp_file"
 -%>
-
-  <%= $curl_command %> <%= $curl_certs %> <%= $pipe_to_ruby %> <%= $append_to_file %>
+  echo "\"<%= $metric['name'] %>\":" >> <%= $temp_file %>
+  <%= $curl_command %> <%= $curl_certs %> <%= $append_to_file %>
 <% }
+-%>
+truncate -s-2 <%= $temp_file %>
+echo '}}' >> <%= $temp_file %>
+cat <%= $temp_file %> | python -m json.tool >> <%= $output_dir %>/<%= $host %>-`date +'%m_%d_%y_%R'`.json
+<%
 }
 -%>
